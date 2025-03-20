@@ -345,9 +345,9 @@ if __name__ == "__main__":
     
     # Inițializăm procesorul TF-IDF
     tfidf_processor = TFIDFProcessor(
-        min_df=2,
-        max_df=0.85,
-        ngram_range=(1, 2),
+        min_df=1,
+        max_df=0.95,
+        ngram_range=(1, 3),
         models_path='models/'
     )
     
@@ -357,7 +357,7 @@ if __name__ == "__main__":
         companies_df,
         taxonomy_df,
         top_k=3,
-        threshold=0.1,
+        threshold=0.05,
         company_text_column='combined_features',
         taxonomy_column='cleaned_label'
     )
