@@ -26,8 +26,8 @@ class TFIDFProcessor:
     pentru textele companiilor și taxonomia de asigurări.
     """
     
-    def __init__(self, min_df: int = 2, max_df: float = 0.85, 
-                 ngram_range: Tuple[int, int] = (1, 2), models_path: str = 'models/'):
+    def __init__(self, min_df: int = 1, max_df: float = 0.9, 
+                 ngram_range: Tuple[int, int] = (1, 3), models_path: str = 'models/'):
         """
         Inițializează procesorul TF-IDF.
         
@@ -47,13 +47,17 @@ class TFIDFProcessor:
             os.makedirs(models_path)
             logger.info(f"S-a creat directorul {models_path}")
         
+        
         # Inițializăm un singur vectorizor TF-IDF comun pentru companii și taxonomie
         # Aceasta va asigura că toți vectorii sunt în același spațiu vectorial
         self.vectorizer = TfidfVectorizer(
             min_df=min_df,
             max_df=max_df,
             ngram_range=ngram_range,
-            sublinear_tf=True  # Aplicarea scalării logaritmice pentru atenuarea frecvenței termenilor
+            sublinear_tf=True, # Aplicarea scalării logaritmice pentru atenuarea frecvenței termenilor
+            use_idf=True,
+            smooth_idf=True,
+            norm='l2'
         )
     
     def fit_vectorizer(self, companies_df: pd.DataFrame, taxonomy_df: pd.DataFrame, 

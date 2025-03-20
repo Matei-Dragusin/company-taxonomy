@@ -186,42 +186,57 @@ class DataPreprocessor:
     
     def clean_text(self, text: str) -> str:
         """
-        Clean and preprocess text data with insurance industry-specific processing.
-        
-        Args:
-            text: Input text to clean
-            
-        Returns:
-            Cleaned text
+        Enhanced version of text cleaning function.
         """
+        
         if not isinstance(text, str):
             return ""
         
-        # Normalize industry terms first
+        # Normalize industry terms
         text = self.normalize_industry_terms(text)
         
         # Convert to lowercase
         text = text.lower()
         
-        # Remove URLs and email addresses
+        # Keep industry-specific stopwords
+        insurance_terms = ['cyber-security', 'e-commerce', 'property & casualty', 'health & safety',
+                       'business-to-business', 'business-to-consumer', 'third-party', 'third party']
+    
+        # Temporary replace insurance terms with placeholders
+        placeholders = {}
+        for i, term in enumerate(insurance_terms):
+            if term in text.lower():
+                placeholder = f"TERM_{i}_PLACEHOLDER"
+                text = text.lower().replace(term, placeholder)
+                placeholders[placeholder] = term.replace('-', ' ').replace('&', 'and')
+                
+        # Remove URL and mail references
         text = re.sub(r'http\S+|www\S+|[\w\.-]+@[\w\.-]+', '', text)
         
-        # Remove special characters but keep hyphens for compound words
-        text = re.sub(r'[^a-zA-Z\s\-]', '', text)
+            # Remove special characters but keep hyphens for compound words
+        text = re.sub(r'[^a-zA-Z\s\-]', ' ', text)
         
-        # Replace multiple spaces with single space
+        # Replace hyphens with spaces to separate compound words
+        text = text.replace('-', ' ')
+        
+        # Replace multiple spaces with a single space
         text = re.sub(r'\s+', ' ', text)
+        
+        # Reintroduce specific terms
+        for placeholder, term in placeholders.items():
+            text = text.replace(placeholder, term)
         
         # Tokenize
         tokens = text.split()
         
-        # Remove stopwords
-        tokens = [token for token in tokens if token not in self.stop_words]
+        # Remove stopwords but keep words relevant to insurance
+        important_words = {'insurance', 'risk', 'liability', 'coverage', 'policy', 'claim', 'premium'}
+        tokens = [token for token in tokens if token not in self.stop_words or token in important_words]
         
         # Lemmatize
         tokens = [self.lemmatizer.lemmatize(token) for token in tokens]
         
-        # Join back to text
+        # Join back into text
         cleaned_text = ' '.join(tokens)
         
         return cleaned_text
@@ -607,6 +622,92 @@ class DataPreprocessor:
         logger.info("Combined processing completed successfully")
         
         return processed_companies, processed_taxonomy
+    
+    # Adaugă această metodă în clasa DataPreprocessor din src/preprocessing/preprocessing.py:
+
+    def expand_taxonomy_labels(self, taxonomy_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Extinde etichetele taxonomiei pentru a îmbunătăți potrivirea.
+        
+        Args:
+            taxonomy_df: DataFrame cu taxonomia de asigurări
+        
+        Returns:
+            DataFrame cu etichete expandate
+        """
+        logger.info("Expandarea etichetelor taxonomiei pentru îmbunătățirea potrivirii")
+        
+        df_result = taxonomy_df.copy()
+        
+        # Adaugă sinonime și variații pentru etichetele existente
+        if 'label' in df_result.columns:
+            # Creează un dicționar de sinonime pentru domenii comune
+            industry_synonyms = {
+                'Real Estate': ['property', 'realty', 'housing', 'buildings', 'land'],
+                'Construction': ['building', 'contracting', 'development', 'infrastructure'],
+                'Financial': ['finance', 'banking', 'investment', 'monetary', 'fiscal'],
+                'Insurance': ['insurer', 'coverage', 'underwriting', 'policy', 'risk management'],
+                'Manufacturing': ['production', 'fabrication', 'industrial', 'factory'],
+                'Technology': ['tech', 'IT', 'digital', 'software', 'computing', 'information systems'],
+                'Healthcare': ['medical', 'health', 'clinical', 'patient care', 'wellness'],
+                'Transportation': ['logistics', 'shipping', 'freight', 'transit', 'fleet'],
+                'Consulting': ['advisory', 'counseling', 'professional services'],
+                'Retail': ['sales', 'commerce', 'merchandising', 'store', 'shop']
+            }
+            
+            # Adaugă coloană pentru termeni expandați
+            df_result['expanded_terms'] = df_result['label'].apply(
+                lambda label: self._expand_label_with_synonyms(label, industry_synonyms)
+            )
+            
+            # Adaugă coloană pentru descriere expandată
+            if 'description' in df_result.columns:
+                df_result['expanded_description'] = df_result.apply(
+                    lambda row: f"{row['label']} {row['description'] if pd.notnull(row['description']) else ''} {row['expanded_terms']}",
+                    axis=1
+                )
+            else:
+                df_result['expanded_description'] = df_result.apply(
+                    lambda row: f"{row['label']} {row['expanded_terms']}",
+                    axis=1
+                )
+            
+            # Curăță descrierea expandată
+            df_result['cleaned_expanded'] = df_result['expanded_description'].apply(self.clean_text)
+        
+        logger.info("Expandare taxonomie completă")
+        
+        return df_result
+
+    def _expand_label_with_synonyms(self, label: str, industry_synonyms: Dict[str, List[str]]) -> str:
+        """
+        Expandează o etichetă cu sinonime relevante.
+        
+        Args:
+            label: Eticheta originală
+            industry_synonyms: Dicționar de sinonime pentru industrii
+            
+        Returns:
+            String cu termeni expandați
+        """
+        expanded_terms = []
+        
+        # Adaugă variații pentru eticheta originală
+        label_parts = label.split()
+        
+        # Verifică pentru fiecare cuvânt cheie din dicționarul de sinonime
+        for key, synonyms in industry_synonyms.items():
+            if key.lower() in label.lower():
+                expanded_terms.extend(synonyms)
+        
+        # Adaugă variații de fraze din etichetă
+        for i in range(len(label_parts)):
+            for j in range(i+1, len(label_parts)+1):
+                phrase = ' '.join(label_parts[i:j])
+                if len(phrase.split()) > 1:  # Doar fraze, nu cuvinte individuale
+                    expanded_terms.append(phrase)
+        
+        return ' '.join(expanded_terms)
 
 
 if __name__ == "__main__":

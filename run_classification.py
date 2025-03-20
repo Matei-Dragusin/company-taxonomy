@@ -126,11 +126,11 @@ def main():
     parser.add_argument('--taxonomy-file', type=str, default='insurance_taxonomy.csv',
                         help='Numele fișierului cu taxonomia (implicit: insurance_taxonomy.csv)')
     
-    parser.add_argument('--top-k', type=int, default=3,
-                        help='Numărul maxim de etichete de asignat unei companii (implicit: 3)')
+    parser.add_argument('--top-k', type=int, default=5,
+                        help='Numărul maxim de etichete de asignat unei companii (implicit: 5)')
     
-    parser.add_argument('--threshold', type=float, default=0.1,
-                        help='Pragul minim de similitudine pentru a asigna o etichetă (implicit: 0.1)')
+    parser.add_argument('--threshold', type=float, default=0.075,
+                        help='Pragul minim de similitudine pentru a asigna o etichetă (implicit: 0.075)')
     
     parser.add_argument('--output-file', type=str, default='classified_companies.csv',
                         help='Numele fișierului de ieșire (implicit: classified_companies.csv)')
