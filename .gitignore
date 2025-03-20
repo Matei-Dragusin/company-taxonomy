@@ -7,4 +7,5 @@ models/
 results/
 logs/
 notebooks/
-
+debug*
+*.log
