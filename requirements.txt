@@ -3,3 +3,6 @@ numpy
 scikit-learn
 nltk
 matplotlib
+torch
+transformers
+sentence-transformers
