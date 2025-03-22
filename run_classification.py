@@ -1,24 +1,28 @@
 #!/usr/bin/env python
 """
-Script pentru rularea clasificării companiilor în taxonomia de asigurări
-folosind tehnica TF-IDF.
+Unified script for classifying companies into the insurance taxonomy.
+Supports both basic classification and optimized classification for large datasets.
 """
 
 import os
 import sys
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 import logging
 import argparse
-from typing import Tuple
+import time
+from typing import Dict, List, Tuple
 
-# Adăugăm directorul rădăcină al proiectului în path pentru a permite importuri
+# Add the project root directory to sys.path to allow imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Importăm modulele necesare
+# Import required modules
 from src.preprocessing.preprocessing import DataPreprocessor
 from src.feature_engineering.tfidf_processor import TFIDFProcessor
+from src.ensemble.ensemble_classifier import EnsembleClassifier
 
-# Configurăm logging
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -26,33 +30,43 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def ensure_directories_exist():
-    """Asigură existența directoarelor necesare"""
-    dirs = ['data/raw', 'data/processed', 'models']
+    """Ensure necessary directories exist"""
+    dirs = ['data/raw', 'data/processed', 'models', 'results']
     for dir_path in dirs:
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
-            logger.info(f"S-a creat directorul: {dir_path}")
+            logger.info(f"Created directory: {dir_path}")
 
-def load_and_preprocess_data(company_file: str, taxonomy_file: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def load_and_preprocess_data(company_file: str, taxonomy_file: str, skip_preprocessing: bool = False) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Încarcă și preprocesează datele companiilor și taxonomiei.
+    Load and preprocess company and taxonomy data.
     
     Args:
-        company_file: Numele fișierului cu companiile
-        taxonomy_file: Numele fișierului cu taxonomia
+        company_file: Name of the company file
+        taxonomy_file: Name of the taxonomy file
+        skip_preprocessing: Whether to load directly from processed files
         
     Returns:
-        Tuple cu DataFrame-urile preprocesate pentru companii și taxonomie
+        Tuple with preprocessed company and taxonomy DataFrames
     """
-    logger.info(f"Încărcare și preprocesare date din {company_file} și {taxonomy_file}")
+    if skip_preprocessing:
+        logger.info("Loading preprocessed data...")
+        processed_path = 'data/processed/'
+        companies_df = pd.read_csv(os.path.join(processed_path, 'processed_companies.csv'))
+        taxonomy_df = pd.read_csv(os.path.join(processed_path, 'processed_taxonomy.csv'))
+        logger.info(f"Loaded {len(companies_df)} companies and {len(taxonomy_df)} taxonomy labels")
+        return companies_df, taxonomy_df
     
-    # Inițializăm preprocesorul
+    logger.info(f"Loading and preprocessing data from {company_file} and {taxonomy_file}")
+    start_time = time.time()
+    
+    # Initialize preprocessor
     preprocessor = DataPreprocessor(
         raw_data_path='data/raw/',
         processed_data_path='data/processed/'
     )
     
-    # Procesăm datele
+    # Process data
     companies_df, taxonomy_df = preprocessor.process_company_and_taxonomy(
         company_file=company_file,
         taxonomy_file=taxonomy_file,
@@ -60,120 +74,307 @@ def load_and_preprocess_data(company_file: str, taxonomy_file: str) -> Tuple[pd.
         output_taxonomy_file="processed_taxonomy.csv"
     )
     
+    logger.info(f"Data preprocessing completed in {time.time() - start_time:.2f} seconds")
+    
     return companies_df, taxonomy_df
 
 def run_classification(companies_df: pd.DataFrame, 
-                      taxonomy_df: pd.DataFrame, 
-                      top_k: int = 3, 
-                      threshold: float = 0.1,
-                      output_file: str = "classified_companies.csv") -> pd.DataFrame:
+                      taxonomy_df: pd.DataFrame,
+                      use_optimizer: bool = True,
+                      top_k: int = 5, 
+                      threshold: float = 0.08,
+                      batch_size: int = 100,
+                      tfidf_weight: float = 0.5,
+                      wordnet_weight: float = 0.25,
+                      keyword_weight: float = 0.25,
+                      output_file: str = "classified_companies.csv",
+                      description_label_file: str = "description_label_results.csv",
+                      description_column: str = "description") -> pd.DataFrame:
     """
-    Rulează clasificarea companiilor folosind TF-IDF.
+    Run classification on company data.
     
     Args:
-        companies_df: DataFrame cu datele companiilor preprocesate
-        taxonomy_df: DataFrame cu taxonomia preprocesată
-        top_k: Numărul maxim de etichete de asignat unei companii
-        threshold: Pragul minim de similitudine pentru a asigna o etichetă
-        output_file: Numele fișierului pentru salvarea rezultatelor
+        companies_df: DataFrame with preprocessed company data
+        taxonomy_df: DataFrame with taxonomy data
+        use_optimizer: Whether to use optimized mode
+        top_k: Maximum number of labels to assign to a company
+        threshold: Minimum similarity threshold to assign a label
+        batch_size: Number of companies to process in each batch
+        tfidf_weight: Weight for TF-IDF similarity in ensemble
+        wordnet_weight: Weight for WordNet similarity in ensemble
+        keyword_weight: Weight for keyword similarity in ensemble
+        output_file: Name of the output file
+        description_label_file: Name of the simplified description-label output file
+        description_column: Column containing company descriptions
         
     Returns:
-        DataFrame cu companiile clasificate
+        DataFrame with classified companies
     """
-    logger.info("Începerea clasificării companiilor folosind TF-IDF")
+    logger.info(f"Starting classification using {'optimized' if use_optimizer else 'basic'} mode")
+    start_time = time.time()
     
-    # Inițializăm procesorul TF-IDF
-    tfidf_processor = TFIDFProcessor(
-        min_df=2,
-        max_df=0.85,
-        ngram_range=(1, 2),
-        models_path='models/'
+    # Initialize ensemble classifier
+    ensemble_classifier = EnsembleClassifier(
+        models_path='models/',
+        tfidf_weight=tfidf_weight,
+        wordnet_weight=wordnet_weight,
+        keyword_weight=keyword_weight,
+        optimizer_mode=use_optimizer,
+        synonym_cache_size=2048
     )
     
-    # Antrenăm vectorizorul pe datele combinate
-    tfidf_processor.fit_vectorizer(
-        companies_df, 
-        taxonomy_df, 
-        company_text_column='combined_features', 
-        taxonomy_column='cleaned_label'
-    )
-    
-    # Clasificăm companiile
-    classified_companies = tfidf_processor.assign_insurance_labels(
+    # Classify companies
+    classified_companies = ensemble_classifier.ensemble_classify(
         companies_df,
         taxonomy_df,
         top_k=top_k,
-        threshold=threshold
+        threshold=threshold,
+        company_text_column='combined_features',
+        batch_size=batch_size
     )
     
-    # Salvăm modelele pentru utilizare ulterioară
-    tfidf_processor.save_models()
+    # Save models for future use
+    ensemble_classifier.save_models()
     
-    # Salvăm rezultatele
+    # Save full results
     output_path = os.path.join('data/processed', output_file)
     classified_companies.to_csv(output_path, index=False)
-    logger.info(f"Rezultatele clasificării au fost salvate în {output_path}")
+    logger.info(f"Classification results saved to {output_path}")
+    
+    # Save simplified description-label results
+    if description_label_file:
+        try:
+            dl_output_path = os.path.join('data/processed', description_label_file)
+            ensemble_classifier.export_description_label_csv(
+                classified_companies,
+                output_path=dl_output_path,
+                description_column=description_column
+            )
+            logger.info(f"Description-label results saved to {dl_output_path}")
+        except Exception as e:
+            logger.error(f"Error exporting description-label results: {e}")
+    
+    logger.info(f"Total classification process completed in {time.time() - start_time:.2f} seconds")
     
     return classified_companies
 
+def evaluate_results(classified_df: pd.DataFrame, output_dir: str = 'results/') -> Dict:
+    """
+    Evaluate classification results and generate statistics.
+    
+    Args:
+        classified_df: DataFrame with classification results
+        output_dir: Directory to save evaluation results
+        
+    Returns:
+        Dictionary with evaluation statistics
+    """
+    logger.info("Evaluating classification results")
+    
+    # Ensure output directory exists
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    # Basic statistics
+    total_companies = len(classified_df)
+    companies_with_labels = 0
+    total_labels = 0
+    label_counts = {}
+    
+    # Distribution of labels per company
+    label_distribution = {0: 0, 1: 0, 2: 0, 3: 0, '4+': 0}
+    
+    for _, row in classified_df.iterrows():
+        labels = row['insurance_labels']
+        
+        # Convert to list if stored as string
+        if isinstance(labels, str):
+            if labels.startswith('[') and labels.endswith(']'):
+                try:
+                    labels = eval(labels)
+                except:
+                    labels = []
+            elif labels == 'Unclassified':
+                labels = []
+            else:
+                labels = [label.strip() for label in labels.split(',')]
+        
+        # Count number of labels per company
+        num_labels = len(labels) if isinstance(labels, list) else 0
+        
+        if num_labels >= 4:
+            label_distribution['4+'] += 1
+        else:
+            label_distribution[num_labels] += 1
+        
+        # Update counters
+        if num_labels > 0:
+            companies_with_labels += 1
+            total_labels += num_labels
+            
+            # Count individual labels
+            for label in labels:
+                label_counts[label] = label_counts.get(label, 0) + 1
+    
+    # Calculate additional metrics
+    coverage = (companies_with_labels / total_companies) * 100 if total_companies > 0 else 0
+    avg_labels_per_company = total_labels / total_companies if total_companies > 0 else 0
+    
+    # Compile results
+    eval_results = {
+        'total_companies': total_companies,
+        'companies_with_labels': companies_with_labels,
+        'coverage_percentage': coverage,
+        'total_labels_assigned': total_labels,
+        'avg_labels_per_company': avg_labels_per_company,
+        'unique_labels_used': len(label_counts),
+        'label_distribution': label_distribution,
+        'top_labels': sorted(label_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+    }
+    
+    # Display results
+    print("\n=== CLASSIFICATION EVALUATION ===")
+    print(f"Total companies: {total_companies}")
+    print(f"Companies with labels: {companies_with_labels} ({coverage:.2f}%)")
+    print(f"Average labels per company: {avg_labels_per_company:.2f}")
+    print(f"Unique labels used: {len(label_counts)}")
+    
+    print("\n== DISTRIBUTION OF LABELS PER COMPANY ==")
+    for label_count, num_companies in label_distribution.items():
+        print(f"{label_count} labels: {num_companies} companies")
+    
+    print("\n== TOP 10 MOST COMMON LABELS ==")
+    for label, count in eval_results['top_labels']:
+        print(f"{label}: {count}")
+    
+    # Generate plots
+    try:
+        plt.figure(figsize=(10, 6))
+        
+        # Plot label distribution
+        labels = list(label_distribution.keys())
+        values = [label_distribution[k] for k in labels]
+        
+        plt.bar([str(x) for x in labels], values)  # Convert labels to strings to avoid type issues
+        plt.xlabel('Number of Labels')
+        plt.ylabel('Number of Companies')
+        plt.title('Distribution of Labels per Company')
+        plt.tight_layout()
+        
+        plt.savefig(os.path.join(output_dir, 'label_distribution.png'))
+        logger.info(f"Saved label distribution plot to {output_dir}")
+    except Exception as e:
+        logger.warning(f"Error generating plots: {e}")
+    
+    return eval_results
+
 def main():
-    """Funcție principală pentru rularea clasificării"""
-    parser = argparse.ArgumentParser(description='Clasificare companii pentru taxonomia de asigurări')
+    """Main function to run the classification"""
+    parser = argparse.ArgumentParser(description='Unified classification for insurance taxonomy')
     
     parser.add_argument('--company-file', type=str, default='companies.csv',
-                        help='Numele fișierului cu lista companiilor (implicit: companies.csv)')
+                        help='Name of the company file (default: companies.csv)')
     
     parser.add_argument('--taxonomy-file', type=str, default='insurance_taxonomy.csv',
-                        help='Numele fișierului cu taxonomia (implicit: insurance_taxonomy.csv)')
+                        help='Name of the taxonomy file (default: insurance_taxonomy.csv)')
+    
+    parser.add_argument('--use-optimizer', action='store_true', default=True,
+                        help='Use optimized mode for large datasets (default: True)')
     
     parser.add_argument('--top-k', type=int, default=5,
-                        help='Numărul maxim de etichete de asignat unei companii (implicit: 5)')
+                        help='Maximum number of labels to assign to a company (default: 5)')
     
-    parser.add_argument('--threshold', type=float, default=0.075,
-                        help='Pragul minim de similitudine pentru a asigna o etichetă (implicit: 0.075)')
+    parser.add_argument('--threshold', type=float, default=0.08,
+                        help='Minimum similarity threshold to assign a label (default: 0.08)')
+    
+    parser.add_argument('--batch-size', type=int, default=100,
+                        help='Number of companies to process in each batch (default: 100)')
+    
+    parser.add_argument('--tfidf-weight', type=float, default=0.5,
+                        help='Weight for TF-IDF similarity in ensemble (default: 0.5)')
+    
+    parser.add_argument('--wordnet-weight', type=float, default=0.25,
+                        help='Weight for WordNet similarity in ensemble (default: 0.25)')
+    
+    parser.add_argument('--keyword-weight', type=float, default=0.25,
+                        help='Weight for keyword similarity in ensemble (default: 0.25)')
     
     parser.add_argument('--output-file', type=str, default='classified_companies.csv',
-                        help='Numele fișierului de ieșire (implicit: classified_companies.csv)')
+                        help='Name of the output file (default: classified_companies.csv)')
+    
+    parser.add_argument('--description-label-file', type=str, default='description_label_results.csv',
+                        help='Name of the simplified description-label output file (default: description_label_results.csv)')
+    
+    parser.add_argument('--description-column', type=str, default='description',
+                        help='Column containing company descriptions (default: description)')
+    
+    parser.add_argument('--skip-preprocessing', action='store_true',
+                        help='Skip preprocessing and use existing processed files')
+    
+    parser.add_argument('--evaluate', action='store_true',
+                        help='Evaluate classification results after completion')
     
     args = parser.parse_args()
     
-    logger.info("Pornirea clasificării companiilor pentru taxonomia de asigurări")
+    logger.info("Starting unified classification for insurance taxonomy")
+    total_start_time = time.time()
     
-    # Asigurăm existența directoarelor necesare
+    # Ensure directories exist
     ensure_directories_exist()
     
-    # Verificăm existența fișierelor de intrare
-    raw_data_path = 'data/raw/'
-    if not os.path.exists(os.path.join(raw_data_path, args.company_file)):
-        logger.error(f"Eroare: Fișierul companiilor nu a fost găsit la {os.path.join(raw_data_path, args.company_file)}")
+    # Check if input files exist
+    if not args.skip_preprocessing:
+        raw_data_path = 'data/raw/'
+        if not os.path.exists(os.path.join(raw_data_path, args.company_file)):
+            logger.error(f"Error: Company file not found at {os.path.join(raw_data_path, args.company_file)}")
+            return
+        
+        if not os.path.exists(os.path.join(raw_data_path, args.taxonomy_file)):
+            logger.error(f"Error: Taxonomy file not found at {os.path.join(raw_data_path, args.taxonomy_file)}")
+            return
+    
+    # Load and preprocess data
+    try:
+        companies_df, taxonomy_df = load_and_preprocess_data(
+            args.company_file, 
+            args.taxonomy_file,
+            args.skip_preprocessing
+        )
+    except Exception as e:
+        logger.error(f"Error loading/preprocessing data: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return
     
-    if not os.path.exists(os.path.join(raw_data_path, args.taxonomy_file)):
-        logger.error(f"Eroare: Fișierul taxonomiei nu a fost găsit la {os.path.join(raw_data_path, args.taxonomy_file)}")
+    # Run classification
+    try:
+        classified_companies = run_classification(
+            companies_df,
+            taxonomy_df,
+            use_optimizer=args.use_optimizer,
+            top_k=args.top_k,
+            threshold=args.threshold,
+            batch_size=args.batch_size,
+            tfidf_weight=args.tfidf_weight,
+            wordnet_weight=args.wordnet_weight,
+            keyword_weight=args.keyword_weight,
+            output_file=args.output_file,
+            description_label_file=args.description_label_file,
+            description_column=args.description_column
+        )
+        
+        # Evaluate results if requested
+        if args.evaluate:
+            evaluate_results(classified_companies)
+            
+    except Exception as e:
+        logger.error(f"Error during classification: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return
     
-    # Încărcăm și preprocesăm datele
-    companies_df, taxonomy_df = load_and_preprocess_data(args.company_file, args.taxonomy_file)
-    
-    # Rulăm clasificarea
-    classified_companies = run_classification(
-        companies_df,
-        taxonomy_df,
-        top_k=args.top_k,
-        threshold=args.threshold,
-        output_file=args.output_file
-    )
-    
-    # Afișăm statistici despre rezultate
-    total_companies = len(classified_companies)
-    classified_count = sum(1 for labels in classified_companies['insurance_labels'] if labels)
-    avg_labels_per_company = sum(len(labels) for labels in classified_companies['insurance_labels']) / total_companies
-    
-    logger.info(f"Clasificare completă:")
-    logger.info(f"  - Total companii procesate: {total_companies}")
-    logger.info(f"  - Companii clasificate cu succes: {classified_count} ({classified_count/total_companies*100:.1f}%)")
-    logger.info(f"  - Număr mediu de etichete per companie: {avg_labels_per_company:.2f}")
-    logger.info(f"Rezultatele complete sunt disponibile în: data/processed/{args.output_file}")
+    total_runtime = time.time() - total_start_time
+    logger.info(f"Total script runtime: {total_runtime:.2f} seconds")
 
 if __name__ == "__main__":
     main()
