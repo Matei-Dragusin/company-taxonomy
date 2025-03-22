@@ -20,7 +20,6 @@ to classify companies into insurance taxonomy categories:
 from src.ensemble.ensemble_classifier import EnsembleClassifier
 from src.ensemble.optimized_ensemble_classifier import OptimizedEnsembleClassifier
 from src.ensemble.fixed_optimized_ensemble import FixedOptimizedEnsembleClassifier
-from src.ensemble.adaptive_ensemble import AdaptiveEnsembleClassifier
 
 __all__ = [
     'EnsembleClassifier', 
