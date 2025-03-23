@@ -6,3 +6,5 @@ matplotlib
 torch
 transformers
 sentence-transformers
+optuna
+plotly
