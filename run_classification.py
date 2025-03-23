@@ -79,17 +79,19 @@ def load_and_preprocess_data(company_file: str, taxonomy_file: str, skip_preproc
     return companies_df, taxonomy_df
 
 def run_classification(companies_df: pd.DataFrame, 
-                      taxonomy_df: pd.DataFrame,
-                      use_optimizer: bool = True,
-                      top_k: int = 5, 
-                      threshold: float = 0.08,
-                      batch_size: int = 100,
-                      tfidf_weight: float = 0.5,
-                      wordnet_weight: float = 0.25,
-                      keyword_weight: float = 0.25,
-                      output_file: str = "classified_companies.csv",
-                      description_label_file: str = "description_label_results.csv",
-                      description_column: str = "description") -> pd.DataFrame:
+                    taxonomy_df: pd.DataFrame,
+                    use_optimizer: bool = True,
+                    top_k: int = 3,  # Reduced from 5 to improve precision
+                    threshold: float = 0.05,  # Lower threshold to increase matches
+                    batch_size: int = 100,
+                    tfidf_weight: float = 0.6,  # Increased TF-IDF weight for better text matching
+                    wordnet_weight: float = 0.25,
+                    keyword_weight: float = 0.15,  # Reduced slightly to prioritize TF-IDF
+                    ensure_one_tag: bool = True,  # New parameter to ensure every company has a tag
+                    output_file: str = "classified_companies.csv",
+                    description_label_file: str = "description_label_results.csv",
+                    description_column: str = "description",
+                    include_scores: bool = True) -> pd.DataFrame:
     """
     Run classification on company data.
     
@@ -103,9 +105,11 @@ def run_classification(companies_df: pd.DataFrame,
         tfidf_weight: Weight for TF-IDF similarity in ensemble
         wordnet_weight: Weight for WordNet similarity in ensemble
         keyword_weight: Weight for keyword similarity in ensemble
+        ensure_one_tag: Whether to ensure each company has at least one tag
         output_file: Name of the output file
         description_label_file: Name of the simplified description-label output file
         description_column: Column containing company descriptions
+        include_scores: Whether to include confidence scores in the output
         
     Returns:
         DataFrame with classified companies
@@ -130,7 +134,8 @@ def run_classification(companies_df: pd.DataFrame,
         top_k=top_k,
         threshold=threshold,
         company_text_column='combined_features',
-        batch_size=batch_size
+        batch_size=batch_size,
+        ensure_one_tag=ensure_one_tag
     )
     
     # Save models for future use
@@ -148,7 +153,8 @@ def run_classification(companies_df: pd.DataFrame,
             ensemble_classifier.export_description_label_csv(
                 classified_companies,
                 output_path=dl_output_path,
-                description_column=description_column
+                description_column=description_column,
+                include_scores=include_scores
             )
             logger.info(f"Description-label results saved to {dl_output_path}")
         except Exception as e:
@@ -316,23 +322,26 @@ def main():
     parser.add_argument('--use-optimizer', action='store_true', default=True,
                         help='Use optimized mode for large datasets (default: True)')
     
-    parser.add_argument('--top-k', type=int, default=5,
-                        help='Maximum number of labels to assign to a company (default: 5)')
+    parser.add_argument('--top-k', type=int, default=3,
+                        help='Maximum number of labels to assign to a company (default: 3)')
     
-    parser.add_argument('--threshold', type=float, default=0.08,
-                        help='Minimum similarity threshold to assign a label (default: 0.08)')
+    parser.add_argument('--threshold', type=float, default=0.05,
+                        help='Minimum similarity threshold to assign a label (default: 0.05)')
     
     parser.add_argument('--batch-size', type=int, default=100,
                         help='Number of companies to process in each batch (default: 100)')
     
-    parser.add_argument('--tfidf-weight', type=float, default=0.5,
-                        help='Weight for TF-IDF similarity in ensemble (default: 0.5)')
+    parser.add_argument('--tfidf-weight', type=float, default=0.6,
+                        help='Weight for TF-IDF similarity in ensemble (default: 0.6)')
     
     parser.add_argument('--wordnet-weight', type=float, default=0.25,
                         help='Weight for WordNet similarity in ensemble (default: 0.25)')
     
-    parser.add_argument('--keyword-weight', type=float, default=0.25,
-                        help='Weight for keyword similarity in ensemble (default: 0.25)')
+    parser.add_argument('--keyword-weight', type=float, default=0.15,
+                        help='Weight for keyword similarity in ensemble (default: 0.15)')
+    
+    parser.add_argument('--ensure-one-tag', action='store_true', default=True,
+                        help='Ensure each company has at least one tag (default: True)')
     
     parser.add_argument('--output-file', type=str, default='classified_companies.csv',
                         help='Name of the output file (default: classified_companies.csv)')
@@ -343,11 +352,17 @@ def main():
     parser.add_argument('--description-column', type=str, default='description',
                         help='Column containing company descriptions (default: description)')
     
+    parser.add_argument('--include-scores', action='store_true', default=True,
+                        help='Include confidence scores in the output (default: True)')
+    
     parser.add_argument('--skip-preprocessing', action='store_true',
                         help='Skip preprocessing and use existing processed files')
     
     parser.add_argument('--evaluate', action='store_true',
                         help='Evaluate classification results after completion')
+    
+    parser.add_argument('--use-optimized-params', action='store_true',
+                        help='Use optimized parameters from hyperparameter search')
     
     args = parser.parse_args()
     
@@ -381,6 +396,16 @@ def main():
         logger.error(traceback.format_exc())
         return
     
+    # Load optimized parameters if requested
+    if args.use_optimized_params:
+        opt_params = load_optimized_parameters()
+        if opt_params:
+            logger.info(f"Using optimized parameters: {opt_params}")
+            # Update args with optimized parameters
+            for param, value in opt_params.items():
+                if hasattr(args, param.replace('-', '_')):
+                    setattr(args, param.replace('-', '_'), value)
+    
     # Run classification
     try:
         classified_companies = run_classification(
@@ -393,9 +418,11 @@ def main():
             tfidf_weight=args.tfidf_weight,
             wordnet_weight=args.wordnet_weight,
             keyword_weight=args.keyword_weight,
+            ensure_one_tag=args.ensure_one_tag,
             output_file=args.output_file,
             description_label_file=args.description_label_file,
-            description_column=args.description_column
+            description_column=args.description_column,
+            include_scores=args.include_scores
         )
         
         # Evaluate results if requested
@@ -410,6 +437,6 @@ def main():
     
     total_runtime = time.time() - total_start_time
     logger.info(f"Total script runtime: {total_runtime:.2f} seconds")
-
+    
 if __name__ == "__main__":
     main()

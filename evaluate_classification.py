@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
-Script pentru evaluarea performanței clasificării companiilor
-și analiza rezultatelor.
+Script for evaluating company classification performance
+and analyzing the results.
 """
 
 import os
@@ -14,10 +14,10 @@ import argparse
 from typing import Dict, List, Tuple
 from collections import Counter
 
-# Adăugăm directorul rădăcină al proiectului în path pentru a permite importuri
+# Add the project's root directory to the path to allow imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Configurăm logging
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -26,58 +26,58 @@ logger = logging.getLogger(__name__)
 
 def load_classification_results(file_path: str) -> pd.DataFrame:
     """
-    Încarcă rezultatele clasificării din fișierul CSV.
+    Load classification results from a CSV file.
     
     Args:
-        file_path: Calea către fișierul cu rezultate
+        file_path: Path to the results file
         
     Returns:
-        DataFrame cu rezultatele clasificării
+        DataFrame with classification results
     """
-    logger.info(f"Încărcare rezultate clasificare din {file_path}")
+    logger.info(f"Loading classification results from {file_path}")
     
     if not os.path.exists(file_path):
-        logger.error(f"Fișierul {file_path} nu există!")
+        logger.error(f"The file {file_path} does not exist!")
         return None
     
     try:
         results_df = pd.read_csv(file_path)
-        logger.info(f"Încărcate {len(results_df)} înregistrări din fișierul de rezultate")
+        logger.info(f"Loaded {len(results_df)} records from the results file")
         return results_df
     except Exception as e:
-        logger.error(f"Eroare la încărcarea fișierului de rezultate: {e}")
+        logger.error(f"Error loading the results file: {e}")
         return None
 
 def analyze_label_distribution(results_df: pd.DataFrame) -> Dict:
     """
-    Analizează distribuția etichetelor asignate.
+    Analyze the distribution of assigned labels.
     
     Args:
-        results_df: DataFrame cu rezultatele clasificării
+        results_df: DataFrame with classification results
         
     Returns:
-        Dicționar cu statistici despre distribuția etichetelor
+        Dictionary with statistics about label distribution
     """
-    logger.info("Analizarea distribuției etichetelor")
+    logger.info("Analyzing label distribution")
     
-    # Convertim coloanele de liste reprezentate ca stringuri în liste Python
+    # Convert columns of lists represented as strings into Python lists
     if 'insurance_labels' not in results_df.columns and 'insurance_label' in results_df.columns:
-        # Dacă avem doar insurance_label, o separăm în listă
+        # If we only have insurance_label, split it into a list
         results_df['insurance_labels'] = results_df['insurance_label'].str.split(', ')
     
-    # Verificăm dacă avem acces la listele de etichete
+    # Check if we have access to the label lists
     if 'insurance_labels' not in results_df.columns:
-        logger.error("Coloana 'insurance_labels' nu există în rezultate!")
+        logger.error("The column 'insurance_labels' does not exist in the results!")
         return {}
     
-    # Numără toate etichetele
+    # Count all labels
     all_labels = []
     for labels in results_df['insurance_labels']:
         if isinstance(labels, list):
             all_labels.extend(labels)
         elif isinstance(labels, str):
             if labels.startswith('[') and labels.endswith(']'):
-                # Convertim string reprezentarea unei liste în listă Python
+                # Convert string representation of a list into a Python list
                 try:
                     parsed_labels = eval(labels)
                     if isinstance(parsed_labels, list):
@@ -85,13 +85,13 @@ def analyze_label_distribution(results_df: pd.DataFrame) -> Dict:
                 except:
                     pass
             else:
-                # Posibil o listă separată prin virgule
+                # Possibly a comma-separated list
                 label_items = [item.strip() for item in labels.split(',') if item.strip()]
                 all_labels.extend(label_items)
     
     label_counts = Counter(all_labels)
     
-    # Companii per etichetă
+    # Companies per label
     label_company_counts = {}
     for label in set(all_labels):
         companies_with_label = 0
@@ -99,17 +99,17 @@ def analyze_label_distribution(results_df: pd.DataFrame) -> Dict:
             if isinstance(labels, list) and label in labels:
                 companies_with_label += 1
             elif isinstance(labels, str):
-                if label in labels:  # Verificare simplă
+                if label in labels:  # Simple check
                     companies_with_label += 1
         label_company_counts[label] = companies_with_label
     
-    # Statistici de distribuție a etichetelor
+    # Label distribution statistics
     total_companies = len(results_df)
     total_label_assignments = len(all_labels)
     unique_labels = len(label_counts)
     avg_labels_per_company = total_label_assignments / total_companies if total_companies > 0 else 0
     
-    # Top etichete și etichete mai puțin frecvente
+    # Top and least frequent labels
     top_labels = label_counts.most_common(10)
     bottom_labels = label_counts.most_common()[:-11:-1]
     
@@ -126,22 +126,22 @@ def analyze_label_distribution(results_df: pd.DataFrame) -> Dict:
 
 def analyze_similarity_scores(results_df: pd.DataFrame) -> Dict:
     """
-    Analizează scorurile de similitudine pentru etichetele asignate.
+    Analyze similarity scores for assigned labels.
     
     Args:
-        results_df: DataFrame cu rezultatele clasificării
+        results_df: DataFrame with classification results
         
     Returns:
-        Dicționar cu statistici despre scorurile de similitudine
+        Dictionary with statistics about similarity scores
     """
-    logger.info("Analizarea scorurilor de similitudine")
+    logger.info("Analyzing similarity scores")
     
-    # Verificăm dacă avem acces la scorurile de similitudine
+    # Check if we have access to similarity scores
     if 'insurance_label_scores' not in results_df.columns:
-        logger.error("Coloana 'insurance_label_scores' nu există în rezultate!")
+        logger.error("The column 'insurance_label_scores' does not exist in the results!")
         return {}
     
-    # Colectăm toate scorurile de similitudine
+    # Collect all similarity scores
     all_scores = []
     for scores in results_df['insurance_label_scores']:
         if isinstance(scores, list):
@@ -155,16 +155,16 @@ def analyze_similarity_scores(results_df: pd.DataFrame) -> Dict:
                 pass
     
     if not all_scores:
-        logger.warning("Nu s-au găsit scoruri de similitudine pentru analiză")
+        logger.warning("No similarity scores found for analysis")
         return {}
     
-    # Calculăm statistici despre scoruri
+    # Calculate statistics about scores
     avg_score = np.mean(all_scores)
     median_score = np.median(all_scores)
     min_score = min(all_scores)
     max_score = max(all_scores)
     
-    # Distribuția scorurilor
+    # Score distribution
     score_ranges = {
         '0.0-0.1': 0,
         '0.1-0.2': 0,
@@ -195,19 +195,19 @@ def analyze_similarity_scores(results_df: pd.DataFrame) -> Dict:
 
 def analyze_company_coverage(results_df: pd.DataFrame) -> Dict:
     """
-    Analizează acoperirea companiilor - câte companii au primit etichete.
+    Analyze company coverage - how many companies received labels.
     
     Args:
-        results_df: DataFrame cu rezultatele clasificării
+        results_df: DataFrame with classification results
         
     Returns:
-        Dicționar cu statistici despre acoperirea companiilor
+        Dictionary with statistics about company coverage
     """
-    logger.info("Analizarea acoperirii companiilor")
+    logger.info("Analyzing company coverage")
     
     total_companies = len(results_df)
     
-    # Verificăm câte companii au primit cel puțin o etichetă
+    # Check how many companies received at least one label
     companies_with_labels = 0
     companies_without_labels = 0
     
@@ -222,7 +222,7 @@ def analyze_company_coverage(results_df: pd.DataFrame) -> Dict:
         else:
             companies_without_labels += 1
     
-    # Distribuția numărului de etichete per companie
+    # Distribution of the number of labels per company
     label_count_distribution = {0: 0, 1: 0, 2: 0, 3: 0, '4+': 0}
     
     for labels in results_df['insurance_labels']:
@@ -256,37 +256,37 @@ def analyze_company_coverage(results_df: pd.DataFrame) -> Dict:
 
 def plot_label_distribution(distribution_stats: Dict, output_dir: str = 'results/figures/'):
     """
-    Generează grafice pentru distribuția etichetelor.
+    Generate plots for label distribution.
     
     Args:
-        distribution_stats: Statisticile distribuției etichetelor
-        output_dir: Directorul unde vor fi salvate graficele
+        distribution_stats: Label distribution statistics
+        output_dir: Directory where plots will be saved
     """
-    logger.info("Generarea graficelor pentru distribuția etichetelor")
+    logger.info("Generating plots for label distribution")
     
-    # Creăm directorul de ieșire dacă nu există
+    # Create output directory if it doesn't exist
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
-    # Plotăm distribuția celor mai frecvente etichete
+    # Plot the distribution of the most frequent labels
     plt.figure(figsize=(12, 6))
     
     if 'top_labels' in distribution_stats and distribution_stats['top_labels']:
         labels = [label for label, count in distribution_stats['top_labels']]
         counts = [count for label, count in distribution_stats['top_labels']]
         
-        # Folosim range pentru x și adaugăm etichetele manual
+        # Use range for x and add labels manually
         x_pos = np.arange(len(labels))
         plt.bar(x_pos, counts)
         plt.xticks(x_pos, labels, rotation=45, ha='right')
-        plt.title('Top 10 Cele Mai Frecvente Etichete')
-        plt.xlabel('Etichetă')
-        plt.ylabel('Număr de Asignări')
+        plt.title('Top 10 Most Frequent Labels')
+        plt.xlabel('Label')
+        plt.ylabel('Number of Assignments')
         plt.tight_layout()
         
         plt.savefig(os.path.join(output_dir, 'top_labels.png'))
     
-    # Plotăm distribuția numărului de etichete per companie
+    # Plot the distribution of the number of labels per company
     plt.figure(figsize=(10, 6))
     
     label_counts = distribution_stats.get('label_count_distribution', {})
@@ -294,21 +294,21 @@ def plot_label_distribution(distribution_stats: Dict, output_dir: str = 'results
         labels = list(label_counts.keys())
         counts = list(label_counts.values())
         
-        # Convertim etichetele la string pentru siguranță
+        # Convert labels to string for safety
         str_labels = [str(label) for label in labels]
         
-        # Folosim range pentru x și adaugăm etichetele manual
+        # Use range for x and add labels manually
         x_pos = np.arange(len(labels))
         plt.bar(x_pos, counts)
         plt.xticks(x_pos, str_labels)
-        plt.title('Distribuția Numărului de Etichete per Companie')
-        plt.xlabel('Număr de Etichete')
-        plt.ylabel('Număr de Companii')
+        plt.title('Distribution of Number of Labels per Company')
+        plt.xlabel('Number of Labels')
+        plt.ylabel('Number of Companies')
         plt.tight_layout()
         
         plt.savefig(os.path.join(output_dir, 'label_count_distribution.png'))
     
-    # Plotăm distribuția scorurilor de similitudine
+    # Plot the distribution of similarity scores
     plt.figure(figsize=(10, 6))
     
     score_ranges = distribution_stats.get('score_ranges', {})
@@ -316,119 +316,119 @@ def plot_label_distribution(distribution_stats: Dict, output_dir: str = 'results
         ranges = list(score_ranges.keys())
         counts = list(score_ranges.values())
         
-        # Folosim range pentru x și adaugăm etichetele manual
+        # Use range for x and add labels manually
         x_pos = np.arange(len(ranges))
         plt.bar(x_pos, counts)
         plt.xticks(x_pos, ranges, rotation=45)
-        plt.title('Distribuția Scorurilor de Similitudine')
-        plt.xlabel('Interval de Scor')
-        plt.ylabel('Număr de Asignări')
+        plt.title('Distribution of Similarity Scores')
+        plt.xlabel('Score Range')
+        plt.ylabel('Number of Assignments')
         plt.tight_layout()
         
         plt.savefig(os.path.join(output_dir, 'similarity_score_distribution.png'))
     
-    logger.info(f"Graficele au fost salvate în directorul {output_dir}")
+    logger.info(f"Plots have been saved in the directory {output_dir}")
 
 def generate_evaluation_report(results_df: pd.DataFrame, output_file: str = 'results/evaluation_report.txt'):
     """
-    Generează un raport de evaluare detaliat.
+    Generate a detailed evaluation report.
     
     Args:
-        results_df: DataFrame cu rezultatele clasificării
-        output_file: Fișierul de ieșire pentru raport
+        results_df: DataFrame with classification results
+        output_file: Output file for the report
     """
-    logger.info("Generarea raportului de evaluare")
+    logger.info("Generating evaluation report")
     
-    # Creăm directorul pentru raport dacă nu există
+    # Create the directory for the report if it doesn't exist
     output_dir = os.path.dirname(output_file)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
-    # Colectăm toate statisticile
+    # Collect all statistics
     label_stats = analyze_label_distribution(results_df)
     score_stats = analyze_similarity_scores(results_df)
     coverage_stats = analyze_company_coverage(results_df)
     
-    # Generăm graficele
+    # Generate plots
     plot_label_distribution({**label_stats, **score_stats, **coverage_stats})
     
-    # Scriem raportul
+    # Write the report
     with open(output_file, 'w') as f:
-        f.write("=== RAPORT DE EVALUARE A CLASIFICĂRII ===\n\n")
+        f.write("=== CLASSIFICATION EVALUATION REPORT ===\n\n")
         
-        f.write("== STATISTICI GENERALE ==\n")
-        f.write(f"Număr total de companii: {coverage_stats['total_companies']}\n")
-        f.write(f"Companii cu etichete asignate: {coverage_stats['companies_with_labels']} ({coverage_stats['coverage_percentage']:.2f}%)\n")
-        f.write(f"Companii fără etichete: {coverage_stats['companies_without_labels']}\n")
-        f.write(f"Număr mediu de etichete per companie: {label_stats['avg_labels_per_company']:.2f}\n\n")
+        f.write("== GENERAL STATISTICS ==\n")
+        f.write(f"Total number of companies: {coverage_stats['total_companies']}\n")
+        f.write(f"Companies with assigned labels: {coverage_stats['companies_with_labels']} ({coverage_stats['coverage_percentage']:.2f}%)\n")
+        f.write(f"Companies without labels: {coverage_stats['companies_without_labels']}\n")
+        f.write(f"Average number of labels per company: {label_stats['avg_labels_per_company']:.2f}\n\n")
         
-        f.write("== DISTRIBUȚIA NUMĂRULUI DE ETICHETE PER COMPANIE ==\n")
+        f.write("== DISTRIBUTION OF NUMBER OF LABELS PER COMPANY ==\n")
         for label_count, num_companies in coverage_stats['label_count_distribution'].items():
-            f.write(f"{label_count} etichete: {num_companies} companii\n")
+            f.write(f"{label_count} labels: {num_companies} companies\n")
         f.write("\n")
         
-        f.write("== STATISTICI ETICHETE ==\n")
-        f.write(f"Număr total de asignări de etichete: {label_stats['total_label_assignments']}\n")
-        f.write(f"Număr de etichete unice folosite: {label_stats['unique_labels']}\n\n")
+        f.write("== LABEL STATISTICS ==\n")
+        f.write(f"Total number of label assignments: {label_stats['total_label_assignments']}\n")
+        f.write(f"Number of unique labels used: {label_stats['unique_labels']}\n\n")
         
-        f.write("== TOP 10 CELE MAI FRECVENTE ETICHETE ==\n")
+        f.write("== TOP 10 MOST FREQUENT LABELS ==\n")
         for label, count in label_stats['top_labels']:
-            f.write(f"{label}: {count} asignări\n")
+            f.write(f"{label}: {count} assignments\n")
         f.write("\n")
         
-        f.write("== SCORURI DE SIMILITUDINE ==\n")
-        f.write(f"Scor mediu de similitudine: {score_stats['avg_score']:.4f}\n")
-        f.write(f"Scor median: {score_stats['median_score']:.4f}\n")
-        f.write(f"Scor minim: {score_stats['min_score']:.4f}\n")
-        f.write(f"Scor maxim: {score_stats['max_score']:.4f}\n\n")
+        f.write("== SIMILARITY SCORES ==\n")
+        f.write(f"Average similarity score: {score_stats['avg_score']:.4f}\n")
+        f.write(f"Median score: {score_stats['median_score']:.4f}\n")
+        f.write(f"Minimum score: {score_stats['min_score']:.4f}\n")
+        f.write(f"Maximum score: {score_stats['max_score']:.4f}\n\n")
         
-        f.write("== DISTRIBUȚIA SCORURILOR DE SIMILITUDINE ==\n")
+        f.write("== DISTRIBUTION OF SIMILARITY SCORES ==\n")
         for range_str, count in score_stats['score_ranges'].items():
-            f.write(f"Interval {range_str}: {count} asignări\n")
+            f.write(f"Range {range_str}: {count} assignments\n")
         
-        f.write("\n=== SFÂRȘIT RAPORT ===\n")
+        f.write("\n=== END OF REPORT ===\n")
     
-    logger.info(f"Raportul de evaluare a fost generat la {output_file}")
+    logger.info(f"The evaluation report has been generated at {output_file}")
     return {**label_stats, **score_stats, **coverage_stats}
 
 def main():
-    """Funcție principală pentru rularea evaluării"""
-    parser = argparse.ArgumentParser(description='Evaluarea performanței clasificării companiilor')
+    """Main function for running the evaluation"""
+    parser = argparse.ArgumentParser(description='Evaluate company classification performance')
     
     parser.add_argument('--input-file', type=str, default='data/processed/classified_companies.csv',
-                        help='Calea către fișierul cu rezultatele clasificării (implicit: data/processed/classified_companies.csv)')
+                        help='Path to the classification results file (default: data/processed/classified_companies.csv)')
     
     parser.add_argument('--output-dir', type=str, default='results',
-                        help='Directorul pentru ieșire (implicit: results)')
+                        help='Output directory (default: results)')
     
     args = parser.parse_args()
     
-    logger.info("Pornirea evaluării performanței clasificării")
+    logger.info("Starting classification performance evaluation")
     
-    # Încărcăm rezultatele clasificării
+    # Load classification results
     results_df = load_classification_results(args.input_file)
     
     if results_df is None:
-        logger.error("Nu s-au putut încărca rezultatele clasificării. Programul se închide.")
+        logger.error("Failed to load classification results. Exiting program.")
         return
     
-    # Creăm directorul de ieșire dacă nu există
+    # Create output directory if it doesn't exist
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
-        logger.info(f"S-a creat directorul de ieșire: {args.output_dir}")
+        logger.info(f"Created output directory: {args.output_dir}")
     
-    # Generăm raportul de evaluare
+    # Generate evaluation report
     output_file = os.path.join(args.output_dir, 'evaluation_report.txt')
     evaluation_stats = generate_evaluation_report(results_df, output_file)
     
-    # Afișăm câteva statistici cheie
-    print("\n=== STATISTICI CHEIE ===")
-    print(f"Număr total de companii: {evaluation_stats['total_companies']}")
-    print(f"Acoperire: {evaluation_stats['coverage_percentage']:.2f}% companii au primit etichete")
-    print(f"Număr mediu de etichete per companie: {evaluation_stats['avg_labels_per_company']:.2f}")
-    print(f"Scor mediu de similitudine: {evaluation_stats['avg_score']:.4f}")
-    print(f"Etichetă cea mai frecventă: {evaluation_stats['top_labels'][0][0]} ({evaluation_stats['top_labels'][0][1]} asignări)")
-    print(f"\nRaportul complet și graficele sunt disponibile în: {args.output_dir}")
+    # Display some key statistics
+    print("\n=== KEY STATISTICS ===")
+    print(f"Total number of companies: {evaluation_stats['total_companies']}")
+    print(f"Coverage: {evaluation_stats['coverage_percentage']:.2f}% of companies received labels")
+    print(f"Average number of labels per company: {evaluation_stats['avg_labels_per_company']:.2f}")
+    print(f"Average similarity score: {evaluation_stats['avg_score']:.4f}")
+    print(f"Most frequent label: {evaluation_stats['top_labels'][0][0]} ({evaluation_stats['top_labels'][0][1]} assignments)")
+    print(f"\nThe full report and plots are available in: {args.output_dir}")
 
 if __name__ == "__main__":
     main()

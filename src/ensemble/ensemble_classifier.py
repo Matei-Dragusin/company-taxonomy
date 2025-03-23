@@ -498,7 +498,8 @@ class EnsembleClassifier:
                          top_k: int = 5, 
                          threshold: float = 0.08,
                          company_text_column: str = 'combined_features',
-                         batch_size: int = 100) -> pd.DataFrame:
+                         batch_size: int = 100,
+                         ensure_one_tag: bool = True) -> pd.DataFrame:
         """
         Classify companies using the ensemble approach.
         
@@ -509,6 +510,7 @@ class EnsembleClassifier:
             threshold: Minimum similarity threshold to assign a label
             company_text_column: Column containing text for comparison
             batch_size: Number of companies to process in each batch (optimized mode only)
+            ensure_one_tag: Whether to ensure each company has at least one tag
             
         Returns:
             DataFrame with added classification results
@@ -603,11 +605,28 @@ class EnsembleClassifier:
                             company_matches.append(enhanced_taxonomy_df.iloc[idx]['label'])
                             company_scores.append(float(score))
                     
-                    # If no labels were assigned, take the highest scoring label
-                    if not company_matches and len(top_indices) > 0:
-                        best_idx = top_indices[0]  # Index with highest similarity
-                        company_matches.append(enhanced_taxonomy_df.iloc[best_idx]['label'])
-                        company_scores.append(float(enhanced_sim[best_idx]))
+                    # If no labels were assigned and ensure_one_tag is True, find the best alternative
+                    if not company_matches and ensure_one_tag:
+                        # Try to find a tag based on the highest similarity score
+                        if len(top_indices) > 0:
+                            best_idx = top_indices[0]  # Index with highest similarity
+                            company_matches.append(enhanced_taxonomy_df.iloc[best_idx]['label'])
+                            company_scores.append(float(enhanced_sim[best_idx]))
+                        else:
+                            # As a last resort, try to assign based on sector or niche
+                            sector_tag = self._find_tag_by_sector(company, enhanced_taxonomy_df)
+                            if sector_tag:
+                                company_matches.append(sector_tag[0])
+                                company_scores.append(sector_tag[1])
+                            else:
+                                # If all else fails, assign a generic insurance tag
+                                default_tag = "General Insurance"
+                                for idx, label in enumerate(enhanced_taxonomy_df['label']):
+                                    if "general" in label.lower() and "insurance" in label.lower():
+                                        default_tag = label
+                                        break
+                                company_matches.append(default_tag)
+                                company_scores.append(0.1)  # Low confidence score for default tag
                     
                     all_ensemble_matches.append(company_matches)
                     all_ensemble_scores.append(company_scores)
@@ -663,11 +682,28 @@ class EnsembleClassifier:
                         company_matches.append(enhanced_taxonomy_df.iloc[idx]['label'])
                         company_scores.append(float(score))
                 
-                # If no labels were assigned, take the highest scoring label
-                if not company_matches and len(top_indices) > 0:
-                    best_idx = top_indices[0]  # Index with highest similarity
-                    company_matches.append(enhanced_taxonomy_df.iloc[best_idx]['label'])
-                    company_scores.append(float(enhanced_sim[best_idx]))
+                # If no labels were assigned and ensure_one_tag is True, find the best alternative
+                if not company_matches and ensure_one_tag:
+                    # Try to find a tag based on the highest similarity score
+                    if len(top_indices) > 0:
+                        best_idx = top_indices[0]  # Index with highest similarity
+                        company_matches.append(enhanced_taxonomy_df.iloc[best_idx]['label'])
+                        company_scores.append(float(enhanced_sim[best_idx]))
+                    else:
+                        # As a last resort, try to assign based on sector or niche
+                        sector_tag = self._find_tag_by_sector(company, enhanced_taxonomy_df)
+                        if sector_tag:
+                            company_matches.append(sector_tag[0])
+                            company_scores.append(sector_tag[1])
+                        else:
+                            # If all else fails, assign a generic insurance tag
+                            default_tag = "General Insurance"
+                            for idx, label in enumerate(enhanced_taxonomy_df['label']):
+                                if "general" in label.lower() and "insurance" in label.lower():
+                                    default_tag = label
+                                    break
+                            company_matches.append(default_tag)
+                            company_scores.append(0.1)  # Low confidence score for default tag
                 
                 all_ensemble_matches.append(company_matches)
                 all_ensemble_scores.append(company_scores)
@@ -693,6 +729,61 @@ class EnsembleClassifier:
         logger.info(f"Ensemble classification complete in {total_time:.2f} seconds")
         
         return result_df
+
+    def _find_tag_by_sector(self, company: pd.Series, taxonomy_df: pd.DataFrame) -> Tuple[str, float]:
+        """
+        Find the most appropriate tag based on company sector or niche.
+        
+        Args:
+            company: Company data series
+            taxonomy_df: Taxonomy DataFrame
+            
+        Returns:
+            Tuple containing the best matching tag and a confidence score
+        """
+        # Check if we have sector or niche information
+        sector = company.get('sector', "") if pd.notnull(company.get('sector', "")) else ""
+        niche = company.get('niche', "") if pd.notnull(company.get('niche', "")) else ""
+        category = company.get('category', "") if pd.notnull(company.get('category', "")) else ""
+        
+        # Combine sector, category and niche
+        sector_info = f"{sector} {category} {niche}".lower()
+        
+        if not sector_info.strip():
+            return None
+        
+        # Look for relevant tags
+        best_match = None
+        best_score = 0
+        
+        for _, row in taxonomy_df.iterrows():
+            label = row['label']
+            label_lower = label.lower()
+            
+            # Simple keyword matching
+            score = 0
+            
+            # Check if any words from the sector appear in the label
+            for word in sector_info.split():
+                if len(word) > 3 and word in label_lower:
+                    score += 0.2
+            
+            # Check if sector is directly related to label
+            for key_sector in self.insurance_keywords:
+                if any(keyword in sector_info for keyword in self.insurance_keywords[key_sector]):
+                    sector_tags = [tag.lower() for tag in self.insurance_keywords[key_sector]]
+                    if any(tag in label_lower for tag in sector_tags):
+                        score += 0.3
+            
+            if score > best_score:
+                best_score = score
+                best_match = label
+        
+        # If no good match found based on sector, return None
+        if best_score < 0.2:
+            return None
+        
+        return (best_match, best_score)
     
     def save_models(self, filename_prefix: str = 'ensemble_model') -> None:
         """
@@ -769,26 +860,46 @@ class EnsembleClassifier:
 
     def export_description_label_csv(self, classified_df: pd.DataFrame, 
                                output_path: str = 'data/processed/description_label_results.csv',
-                               description_column: str = 'description') -> None:
+                               description_column: str = 'description',
+                                include_scores: bool = False) -> None:
         """
-        Export a simplified CSV file with only company descriptions and their assigned insurance labels.
+        Export a CSV file with company descriptions and their assigned insurance labels.
         
         Args:
             classified_df: DataFrame with classification results
             output_path: Path for the output CSV file
             description_column: Column name containing company descriptions
+            include_scores: Whether to include confidence scores in the output
         """
-        logger.info(f"Exporting simplified description-label CSV to {output_path}")
+        logger.info(f"Exporting description-label CSV to {output_path}")
         
         if description_column not in classified_df.columns:
             logger.error(f"Description column '{description_column}' not found in DataFrame")
             raise ValueError(f"Description column '{description_column}' not found")
         
-        # Create a new DataFrame with only description and insurance label
-        export_df = pd.DataFrame({
+        export_columns = {
             'description': classified_df[description_column],
             'insurance_label': classified_df['insurance_label']
-        })
+        }
+        
+        # Include additional information if available and useful
+        if 'sector' in classified_df.columns:
+            export_columns['sector'] = classified_df['sector']
+        
+        if 'niche' in classified_df.columns:
+            export_columns['niche'] = classified_df['niche']
+        
+        if 'category' in classified_df.columns:
+            export_columns['category'] = classified_df['category']
+            
+        if include_scores and 'insurance_label_scores' in classified_df.columns:
+            # Convert score lists to strings for CSV export
+            export_columns['label_scores'] = classified_df['insurance_label_scores'].apply(
+                lambda x: ', '.join([f"{score:.4f}" for score in x]) if isinstance(x, list) else x
+            )
+        
+        # Create a new DataFrame with only the selected columns
+        export_df = pd.DataFrame(export_columns)
         
         # Save to CSV
         export_df.to_csv(output_path, index=False)

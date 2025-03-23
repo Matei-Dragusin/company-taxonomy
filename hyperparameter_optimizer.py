@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
-Script pentru optimizarea automată a hiperparametrilor clasificatorului.
-Utilizează Optuna pentru a găsi valorile optime pentru parametrii clasificatorului.
+Script for automatic hyperparameter optimization of the classifier.
+Uses Optuna to find the optimal values for the classifier parameters.
 """
 
 import os
@@ -16,15 +16,15 @@ from typing import Dict, List, Tuple, Optional
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 
-# Adaugă directorul rădăcină al proiectului în path pentru a permite importuri
+# Add the project's root directory to the path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Importă modulele necesare
+# Import necessary modules
 from src.preprocessing.preprocessing import DataPreprocessor
 from src.feature_engineering.tfidf_processor import TFIDFProcessor
 from src.ensemble.ensemble_classifier import EnsembleClassifier
 
-# Configurează logging
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -35,46 +35,46 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Asigură existența directoarelor necesare
+# Ensure necessary directories exist
 def ensure_directories_exist():
-    """Asigură existența directoarelor necesare"""
+    """Ensure necessary directories exist"""
     dirs = ['data/raw', 'data/processed', 'models', 'results', 'logs', 'optimization_results']
     for dir_path in dirs:
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
-            logger.info(f"S-a creat directorul: {dir_path}")
+            logger.info(f"Created directory: {dir_path}")
 
-# Încarcă și preprocesează datele
+# Load and preprocess data
 def load_and_preprocess_data(company_file: str, taxonomy_file: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Încarcă și preprocesează datele companiilor și taxonomiei.
+    Load and preprocess company and taxonomy data.
     
     Args:
-        company_file: Numele fișierului cu companii
-        taxonomy_file: Numele fișierului cu taxonomie
+        company_file: Name of the company file
+        taxonomy_file: Name of the taxonomy file
         
     Returns:
-        Tuple cu DataFrame-urile preprocesate pentru companii și taxonomie
+        Tuple with preprocessed DataFrames for companies and taxonomy
     """
-    logger.info(f"Încărcare și preprocesare date din {company_file} și {taxonomy_file}")
+    logger.info(f"Loading and preprocessing data from {company_file} and {taxonomy_file}")
     
-    # Verifică dacă există date preprocesate
+    # Check if preprocessed data exists
     processed_companies_path = os.path.join('data/processed', 'processed_companies.csv')
     processed_taxonomy_path = os.path.join('data/processed', 'processed_taxonomy.csv')
     
     if os.path.exists(processed_companies_path) and os.path.exists(processed_taxonomy_path):
-        logger.info("Se încarcă datele preprocesate existente...")
+        logger.info("Loading existing preprocessed data...")
         companies_df = pd.read_csv(processed_companies_path)
         taxonomy_df = pd.read_csv(processed_taxonomy_path)
         return companies_df, taxonomy_df
     
-    # Inițializează preprocesorul
+    # Initialize the preprocessor
     preprocessor = DataPreprocessor(
         raw_data_path='data/raw/',
         processed_data_path='data/processed/'
     )
     
-    # Procesează datele
+    # Process the data
     companies_df, taxonomy_df = preprocessor.process_company_and_taxonomy(
         company_file=company_file,
         taxonomy_file=taxonomy_file,
@@ -84,7 +84,7 @@ def load_and_preprocess_data(company_file: str, taxonomy_file: str) -> Tuple[pd.
     
     return companies_df, taxonomy_df
 
-# Funcție pentru evaluarea unui model cu un set specific de parametri
+# Function to evaluate a model with a specific set of parameters
 def evaluate_parameters(
     companies_df: pd.DataFrame, 
     taxonomy_df: pd.DataFrame,
@@ -92,18 +92,18 @@ def evaluate_parameters(
     params: Dict
 ) -> float:
     """
-    Evaluează un set de parametri pe datele de validare.
+    Evaluate a set of parameters on the validation data.
     
     Args:
-        companies_df: DataFrame cu datele companiilor
-        taxonomy_df: DataFrame cu taxonomia
-        validation_set: DataFrame cu set de validare anotat
-        params: Dicționar cu parametri de testat
+        companies_df: DataFrame with company data
+        taxonomy_df: DataFrame with taxonomy
+        validation_set: DataFrame with annotated validation set
+        params: Dictionary with parameters to test
         
     Returns:
-        Scor de performanță (mai mare este mai bun)
+        Performance score (higher is better)
     """
-    # Extragem parametrii din dicționar
+    # Extract parameters from the dictionary
     top_k = params.get('top_k', 5)
     threshold = params.get('threshold', 0.08)
     batch_size = params.get('batch_size', 100)
@@ -111,7 +111,7 @@ def evaluate_parameters(
     wordnet_weight = params.get('wordnet_weight', 0.25)
     keyword_weight = params.get('keyword_weight', 0.25)
     
-    # Creăm clasificatorul cu parametrii specificați
+    # Create the classifier with the specified parameters
     ensemble_classifier = EnsembleClassifier(
         models_path='models/temp/',
         tfidf_weight=tfidf_weight,
@@ -120,13 +120,12 @@ def evaluate_parameters(
         optimizer_mode=True
     )
     
-    # Rulăm clasificarea pe un subset mic pentru eficiență
-    # (putem folosi un eșantion mai mic pentru optimizare)
+    # Run classification on a small subset for efficiency
     sample_size = min(200, len(companies_df))
     sample_companies = companies_df.sample(n=sample_size, random_state=42)
     
     try:
-        # Clasificăm companiile
+        # Classify the companies
         classified_companies = ensemble_classifier.ensemble_classify(
             sample_companies,
             taxonomy_df,
@@ -136,14 +135,14 @@ def evaluate_parameters(
             batch_size=batch_size
         )
         
-        # Calculăm metricile de performanță
-        # Dacă avem date anotat manual, putem calcula precizia, recall, F1
-        # Dacă nu, putem folosi metrici euristice:
+        # Calculate performance metrics
+        # If we have manually annotated data, we can calculate precision, recall, F1
+        # Otherwise, we can use heuristic metrics:
         
-        # 1. Acoperirea (procentul de companii cu cel puțin o etichetă)
+        # 1. Coverage (percentage of companies with at least one label)
         coverage = (classified_companies['insurance_label'] != 'Unclassified').mean()
         
-        # 2. Scorul mediu de încredere
+        # 2. Average confidence score
         confidence_scores = []
         for scores in classified_companies['insurance_label_scores']:
             if isinstance(scores, list) and len(scores) > 0:
@@ -158,7 +157,7 @@ def evaluate_parameters(
         
         mean_confidence = np.mean(confidence_scores) if confidence_scores else 0
         
-        # 3. Diversitatea etichetelor (numărul de etichete unice folosite)
+        # 3. Label diversity (number of unique labels used)
         all_labels = []
         for labels in classified_companies['insurance_labels']:
             if isinstance(labels, list):
@@ -173,98 +172,98 @@ def evaluate_parameters(
         unique_labels = len(set(all_labels))
         label_diversity = unique_labels / len(taxonomy_df) if len(taxonomy_df) > 0 else 0
         
-        # Combinăm metricile într-un scor final
-        # Putem ajusta ponderile în funcție de importanța fiecărei metrici
+        # Combine metrics into a final score
+        # We can adjust the weights based on the importance of each metric
         final_score = (0.4 * coverage) + (0.4 * mean_confidence) + (0.2 * label_diversity)
         
-        # Dacă avem date de validare anotat manual, folosim F1 score
+        # If we have manually annotated validation data, use F1 score
         if validation_set is not None and len(validation_set) > 0:
-            # Implementează logica de evaluare pe date anotat
+            # Implement evaluation logic on annotated data
             # ...
             pass
         
         return final_score
         
     except Exception as e:
-        logger.error(f"Eroare la evaluarea parametrilor: {e}")
-        return 0.0  # În caz de eroare, returnăm un scor minim
+        logger.error(f"Error evaluating parameters: {e}")
+        return 0.0  # Return a minimum score in case of error
 
-# Funcție obiectiv pentru Optuna
+# Objective function for Optuna
 def objective(trial, companies_df, taxonomy_df, validation_set=None):
     """
-    Funcție obiectiv pentru optimizarea Optuna.
+    Objective function for Optuna optimization.
     
     Args:
-        trial: Obiect trial Optuna
-        companies_df: DataFrame cu datele companiilor
-        taxonomy_df: DataFrame cu taxonomia
-        validation_set: Date de validare optional
+        trial: Optuna trial object
+        companies_df: DataFrame with company data
+        taxonomy_df: DataFrame with taxonomy
+        validation_set: Optional validation data
         
     Returns:
-        Scor de performanță
+        Performance score
     """
-    # Definim spațiul de căutare a parametrilor
+    # Define the parameter search space
     params = {
         'top_k': trial.suggest_int('top_k', 1, 10),
         'threshold': trial.suggest_float('threshold', 0.01, 0.3),
         'batch_size': trial.suggest_categorical('batch_size', [50, 100, 200]),
     }
     
-    # Folosim o abordare diferită pentru a asigura că ponderile se însumează la 1
-    # Sugeram ponderi relative, apoi le normalizăm
+    # Use a different approach to ensure weights sum to 1
+    # Suggest relative weights, then normalize them
     tfidf_relative = trial.suggest_float('tfidf_relative', 0.1, 1.0)
     wordnet_relative = trial.suggest_float('wordnet_relative', 0.1, 1.0)
     keyword_relative = trial.suggest_float('keyword_relative', 0.1, 1.0)
     
-    # Normalizăm ponderile ca să se însumeze la 1
+    # Normalize weights to sum to 1
     total_weight = tfidf_relative + wordnet_relative + keyword_relative
     params['tfidf_weight'] = tfidf_relative / total_weight
     params['wordnet_weight'] = wordnet_relative / total_weight
     params['keyword_weight'] = keyword_relative / total_weight
     
-    # Evaluăm parametrii
+    # Evaluate the parameters
     score = evaluate_parameters(companies_df, taxonomy_df, validation_set, params)
     
     return score
 
-# Funcție pentru optimizarea hiperparametrilor
+# Function for hyperparameter optimization
 def optimize_hyperparameters(
     companies_df: pd.DataFrame, 
     taxonomy_df: pd.DataFrame,
     validation_set: Optional[pd.DataFrame] = None,
     n_trials: int = 50,
-    timeout: int = 3600,  # 1 oră implicit
+    timeout: int = 3600,  # Default 1 hour
     study_name: str = "insurance_taxonomy_optimization"
 ) -> Dict:
     """
-    Optimizează hiperparametrii folosind Optuna.
+    Optimize hyperparameters using Optuna.
     
     Args:
-        companies_df: DataFrame cu datele companiilor
-        taxonomy_df: DataFrame cu taxonomia
-        validation_set: Date de validare optional
-        n_trials: Numărul de încercări pentru optimizare
-        timeout: Timpul maxim (în secunde) pentru optimizare
-        study_name: Numele studiului Optuna
+        companies_df: DataFrame with company data
+        taxonomy_df: DataFrame with taxonomy
+        validation_set: Optional validation data
+        n_trials: Number of trials for optimization
+        timeout: Maximum time (in seconds) for optimization
+        study_name: Name of the Optuna study
         
     Returns:
-        Dicționar cu parametrii optimizați
+        Dictionary with optimized parameters
     """
-    logger.info(f"Începere optimizare hiperparametri cu {n_trials} încercări...")
+    logger.info(f"Starting hyperparameter optimization with {n_trials} trials...")
     
-    # Creăm un director pentru a stoca datele studiului
+    # Create a directory to store the study data
     study_dir = os.path.join('optimization_results')
     if not os.path.exists(study_dir):
         os.makedirs(study_dir)
     
-    # Creăm un nou studiu Optuna
+    # Create a new Optuna study
     db_path = f"sqlite:///{os.path.join(study_dir, f'{study_name}.db')}"
     
-    # Setăm pruner și sampler pentru eficiență
+    # Set pruner and sampler for efficiency
     pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=5)
     sampler = TPESampler(seed=42)
     
-    # Creăm sau încărcăm studiul
+    # Create or load the study
     study = optuna.create_study(
         study_name=study_name,
         storage=db_path,
@@ -274,7 +273,7 @@ def optimize_hyperparameters(
         load_if_exists=True
     )
     
-    # Rulăm optimizarea
+    # Run the optimization
     start_time = time.time()
     try:
         study.optimize(
@@ -283,53 +282,53 @@ def optimize_hyperparameters(
             timeout=timeout
         )
     except KeyboardInterrupt:
-        logger.info("Optimizare întreruptă manual.")
+        logger.info("Optimization manually interrupted.")
     
     duration = time.time() - start_time
-    logger.info(f"Optimizare finalizată în {duration:.2f} secunde.")
+    logger.info(f"Optimization completed in {duration:.2f} seconds.")
     
-    # Obținem parametrii optimizați
+    # Get the optimized parameters
     best_params = study.best_params
     best_score = study.best_value
     
-    # Afișăm rezultatele
-    logger.info(f"Cel mai bun scor: {best_score}")
-    logger.info(f"Parametri optimizați: {best_params}")
+    # Display results
+    logger.info(f"Best score: {best_score}")
+    logger.info(f"Optimized parameters: {best_params}")
     
-    # Salvăm rezultatele într-un fișier
+    # Save results to a file
     results_file = os.path.join(study_dir, f"{study_name}_results.txt")
     with open(results_file, 'w') as f:
-        f.write(f"Cel mai bun scor: {best_score}\n")
-        f.write(f"Parametri optimizați:\n")
+        f.write(f"Best score: {best_score}\n")
+        f.write(f"Optimized parameters:\n")
         for param, value in best_params.items():
             f.write(f"  {param}: {value}\n")
         
-        f.write("\nIstoricul încercărilor:\n")
-        # Sortăm doar încercările care au o valoare validă
+        f.write("\nTrial history:\n")
+        # Sort only trials with a valid value
         valid_trials = [t for t in study.trials if t.value is not None]
         for trial in sorted(valid_trials, key=lambda t: t.value, reverse=True):
             f.write(f"  Trial {trial.number}, Score: {trial.value}\n")
             f.write(f"  Params: {trial.params}\n\n")
     
-    # Salvăm și grafice pentru analiza hiperparametrilor
+    # Save plots for hyperparameter analysis
     try:
         import matplotlib.pyplot as plt
         from optuna.visualization import plot_param_importances, plot_optimization_history
         
-        # Istoricul optimizării
+        # Optimization history
         fig = plot_optimization_history(study)
         fig.write_image(os.path.join(study_dir, f"{study_name}_history.png"))
         
-        # Importanța parametrilor
+        # Parameter importance
         fig = plot_param_importances(study)
         fig.write_image(os.path.join(study_dir, f"{study_name}_importance.png"))
         
     except Exception as e:
-        logger.warning(f"Nu s-au putut genera graficele: {e}")
+        logger.warning(f"Could not generate plots: {e}")
     
     return best_params
 
-# Funcție pentru rularea clasificării cu parametri optimizați
+# Function to run classification with optimized parameters
 def run_with_optimized_parameters(
     companies_df: pd.DataFrame,
     taxonomy_df: pd.DataFrame,
@@ -337,20 +336,20 @@ def run_with_optimized_parameters(
     output_file: str = "optimized_classification.csv"
 ) -> pd.DataFrame:
     """
-    Rulează clasificarea cu parametrii optimizați.
+    Run classification with optimized parameters.
     
     Args:
-        companies_df: DataFrame cu datele companiilor
-        taxonomy_df: DataFrame cu taxonomia
-        optimized_params: Dicționar cu parametri optimizați
-        output_file: Numele fișierului de ieșire
+        companies_df: DataFrame with company data
+        taxonomy_df: DataFrame with taxonomy
+        optimized_params: Dictionary with optimized parameters
+        output_file: Name of the output file
         
     Returns:
-        DataFrame cu rezultatele clasificării
+        DataFrame with classification results
     """
-    logger.info(f"Rulare clasificare cu parametri optimizați: {optimized_params}")
+    logger.info(f"Running classification with optimized parameters: {optimized_params}")
     
-    # Extragem parametrii
+    # Extract parameters
     top_k = optimized_params.get('top_k', 5)
     threshold = optimized_params.get('threshold', 0.08)
     batch_size = optimized_params.get('batch_size', 100)
@@ -358,7 +357,7 @@ def run_with_optimized_parameters(
     wordnet_weight = optimized_params.get('wordnet_weight', 0.25)
     keyword_weight = optimized_params.get('keyword_weight', 0.25)
     
-    # Inițializăm clasificatorul ensemble
+    # Initialize the ensemble classifier
     ensemble_classifier = EnsembleClassifier(
         models_path='models/',
         tfidf_weight=tfidf_weight,
@@ -367,7 +366,7 @@ def run_with_optimized_parameters(
         optimizer_mode=True
     )
     
-    # Clasificăm companiile
+    # Classify the companies
     classified_companies = ensemble_classifier.ensemble_classify(
         companies_df,
         taxonomy_df,
@@ -377,15 +376,15 @@ def run_with_optimized_parameters(
         batch_size=batch_size
     )
     
-    # Salvăm modelele pentru utilizare ulterioară
+    # Save the models for future use
     ensemble_classifier.save_models(filename_prefix='optimized_ensemble_model')
     
-    # Salvăm rezultatele
+    # Save the results
     output_path = os.path.join('data/processed', output_file)
     classified_companies.to_csv(output_path, index=False)
-    logger.info(f"Rezultate salvate în {output_path}")
+    logger.info(f"Results saved to {output_path}")
     
-    # Salvăm și un fișier simplificat
+    # Save a simplified file
     ensemble_classifier.export_description_label_csv(
         classified_companies,
         output_path=os.path.join('data/processed', 'optimized_description_label.csv'),
@@ -394,63 +393,63 @@ def run_with_optimized_parameters(
     
     return classified_companies
 
-# Funcție principală
+# Main function
 def main():
-    """Funcție principală pentru rularea optimizării hiperparametrilor"""
-    parser = argparse.ArgumentParser(description='Optimizare hiperparametri pentru clasificarea taxonomiei')
+    """Main function to run hyperparameter optimization"""
+    parser = argparse.ArgumentParser(description='Hyperparameter optimization for taxonomy classification')
     
     parser.add_argument('--company-file', type=str, default='companies.csv',
-                        help='Numele fișierului cu companii (implicit: companies.csv)')
+                        help='Name of the company file (default: companies.csv)')
     
     parser.add_argument('--taxonomy-file', type=str, default='insurance_taxonomy.csv',
-                        help='Numele fișierului cu taxonomie (implicit: insurance_taxonomy.csv)')
+                        help='Name of the taxonomy file (default: insurance_taxonomy.csv)')
     
     parser.add_argument('--n-trials', type=int, default=50,
-                        help='Numărul de încercări pentru optimizare (implicit: 50)')
+                        help='Number of trials for optimization (default: 50)')
     
     parser.add_argument('--timeout', type=int, default=3600,
-                        help='Timpul maxim în secunde pentru optimizare (implicit: 3600)')
+                        help='Maximum time in seconds for optimization (default: 3600)')
     
     parser.add_argument('--study-name', type=str, default='insurance_taxonomy_optimization',
-                        help='Numele studiului Optuna (implicit: insurance_taxonomy_optimization)')
+                        help='Name of the Optuna study (default: insurance_taxonomy_optimization)')
     
     parser.add_argument('--run-optimized', action='store_true',
-                        help='Rulează clasificarea cu parametrii optimizați după optimizare')
+                        help='Run classification with optimized parameters after optimization')
     
     parser.add_argument('--output-file', type=str, default='optimized_classified_companies.csv',
-                        help='Numele fișierului de ieșire pentru clasificare (implicit: optimized_classified_companies.csv)')
+                        help='Name of the output file for classification (default: optimized_classified_companies.csv)')
     
     args = parser.parse_args()
     
-    logger.info("Începere optimizare hiperparametri pentru clasificarea taxonomiei")
+    logger.info("Starting hyperparameter optimization for taxonomy classification")
     
-    # Asigurăm existența directoarelor necesare
+    # Ensure necessary directories exist
     ensure_directories_exist()
     
-    # Încărcăm și preprocesăm datele
+    # Load and preprocess data
     try:
         companies_df, taxonomy_df = load_and_preprocess_data(
             args.company_file, 
             args.taxonomy_file
         )
     except Exception as e:
-        logger.error(f"Eroare la încărcarea/preprocesarea datelor: {e}")
+        logger.error(f"Error loading/preprocessing data: {e}")
         return
     
-    # Optimizăm hiperparametrii
+    # Optimize hyperparameters
     try:
         optimized_params = optimize_hyperparameters(
             companies_df,
             taxonomy_df,
-            validation_set=None,  # Aici poți adăuga date anotat manual dacă ai
+            validation_set=None,  # Add manually annotated data here if available
             n_trials=args.n_trials,
             timeout=args.timeout,
             study_name=args.study_name
         )
         
-        logger.info(f"Parametri optimizați obținuți: {optimized_params}")
+        logger.info(f"Optimized parameters obtained: {optimized_params}")
         
-        # Rulăm clasificarea cu parametrii optimizați dacă este cerut
+        # Run classification with optimized parameters if requested
         if args.run_optimized:
             classified_companies = run_with_optimized_parameters(
                 companies_df,
@@ -459,14 +458,14 @@ def main():
                 output_file=args.output_file
             )
             
-            logger.info(f"Clasificare cu parametri optimizați finalizată!")
+            logger.info(f"Classification with optimized parameters completed!")
     except Exception as e:
-        logger.error(f"Eroare în timpul optimizării: {e}")
+        logger.error(f"Error during optimization: {e}")
         import traceback
         logger.error(traceback.format_exc())
         return
     
-    logger.info("Optimizare hiperparametri finalizată!")
+    logger.info("Hyperparameter optimization completed!")
 
 if __name__ == "__main__":
     main()
