@@ -7,3 +7,5 @@ logs/
 notebooks/
 debug*
 *.log
+results/
+optimization_results/
