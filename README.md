@@ -25,7 +25,7 @@ This project implements a robust company classifier for an insurance taxonomy. I
    pip install -r requirements.txt
    ```
 
-3. Place your input files in the `data/raw` directory:
+3. The required input files are already included in the repository under the `data/raw` directory:
    - `companies.csv`: List of companies to classify
    - `insurance_taxonomy.csv`: Insurance taxonomy labels
 
