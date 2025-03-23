@@ -268,6 +268,41 @@ def evaluate_results(classified_df: pd.DataFrame, output_dir: str = 'results/') 
     
     return eval_results
 
+def load_optimized_parameters():
+    """Încarcă parametrii optimizați din fișierul rezultat"""
+    opt_file = 'optimization_results/insurance_taxonomy_optimization_results.txt'
+    
+    if not os.path.exists(opt_file):
+        logger.warning("Fișierul cu parametri optimizați nu există. Se folosesc valorile implicite.")
+        return None
+        
+    params = {}
+    try:
+        with open(opt_file, 'r') as f:
+            lines = f.readlines()
+            param_section = False
+            
+            for line in lines:
+                if line.startswith("Parametri optimizați:"):
+                    param_section = True
+                    continue
+                
+                if param_section and line.strip() and ":" in line:
+                    key, value = line.split(":", 1)
+                    key = key.strip()
+                    value = value.strip()
+                    
+                    # Convertim valorile la tipul potrivit
+                    if key in ['top_k', 'batch_size']:
+                        params[key] = int(value)
+                    else:
+                        params[key] = float(value)
+        
+        return params
+    except Exception as e:
+        logger.warning(f"Eroare la încărcarea parametrilor optimizați: {e}")
+        return None
+
 def main():
     """Main function to run the classification"""
     parser = argparse.ArgumentParser(description='Unified classification for insurance taxonomy')
